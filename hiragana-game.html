@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>日語50音記憶遊戲</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: black; color: white; font-family: Arial, sans-serif; text-align: center; }
+        .game-area { position: relative; width: 100vw; height: 100vh; }
+        .status { position: absolute; top: 10px; left: 10px; color: white; }
+        .letter { position: absolute; font-size: 2rem; color: white; }
+        .romaji-display { position: absolute; top: 80%; left: 50%; transform: translate(-50%, -50%); font-size: 2.5rem; color: yellow; font-weight: bold; z-index: 10; display: none; }
+        .input-display { position: absolute; bottom: 50px; left: 50%; transform: translateX(-50%); font-size: 1.5rem; color: yellow; }
+        .input-field { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); }
+        .game-over { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); display: none; text-align: center; background: rgba(0, 0, 0, 0.8); padding: 20px; border-radius: 10px; }
+        .game-over button { margin-top: 10px; padding: 10px; font-size: 1rem; }
+        .level-up { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(255, 215, 0, 0.8); color: black; padding: 15px; border-radius: 10px; font-size: 1.5rem; display: none; animation: fadeOut 2s forwards; }
+        .stats-button { position: absolute; top: 40px; left: 10px; padding: 5px 10px; background-color: #555; border: none; color: white; cursor: pointer; }
+        .stats-panel { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.9); padding: 20px; border-radius: 10px; max-height: 80vh; overflow-y: auto; display: none; z-index: 100; }
+        .stats-panel table { border-collapse: collapse; width: 100%; }
+        .stats-panel th, .stats-panel td { border: 1px solid #444; padding: 8px; text-align: left; }
+        .stats-panel th { background-color: #333; }
+        .stats-panel .close-button { position: absolute; top: 10px; right: 10px; background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer; }
+        @keyframes fadeOut {
+            0% { opacity: 1; }
+            70% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+    </style>
+</head>
+<body>
+    <div class="game-area" id="gameArea"></div>
+    <div id="romajiDisplay" class="romaji-display"></div>
+    <div id="inputDisplay" class="input-display"></div>
+    <input type="text" id="inputField" class="input-field">
+    <div id="statusDisplay" class="status"></div>
+    <button id="statsButton" class="stats-button">顯示學習統計</button>
+    <div id="levelUpNotice" class="level-up">新的字母加入!</div>
+    <div id="gameOverScreen" class="game-over">
+        <h1>遊戲結束</h1>
+        <p>最終分數: <span id="finalScore">0</span></p>
+        <p>最高等級: <span id="finalLevel">0</span></p>
+        <button onclick="restartGame()">重新開始</button>
+    </div>
+    <div id="statsPanel" class="stats-panel">
+        <button class="close-button" id="closeStatsButton">×</button>
+        <h2>字母學習統計</h2>
+        <table id="statsTable">
+            <thead>
+                <tr>
+                    <th>字母</th>
+                    <th>羅馬字</th>
+                    <th>等級</th>
+                    <th>出現次數</th>
+                    <th>成功次數</th>
+                    <th>失敗次數</th>
+                    <th>失敗率</th>
+                    <th>調整機率</th>
+                </tr>
+            </thead>
+            <tbody id="statsTableBody"></tbody>
+        </table>
+    </div>
+    
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            // 完整的50音平假名和罗马字映射
+            const fullHiraganaMap = {
+                // あ行
+                "あ": "a", "い": "i", "う": "u", "え": "e", "お": "o",
+                // か行
+                "か": "ka", "き": "ki", "く": "ku", "け": "ke", "こ": "ko",
+                // さ行
+                "さ": "sa", "し": "shi", "す": "su", "せ": "se", "そ": "so",
+                // た行
+                "た": "ta", "ち": "chi", "つ": "tsu", "て": "te", "と": "to",
+                // な行
+                "な": "na", "に": "ni", "ぬ": "nu", "ね": "ne", "の": "no",
+                // は行
+                "は": "ha", "ひ": "hi", "ふ": "fu", "へ": "he", "ほ": "ho",
+                // ま行
+                "ま": "ma", "み": "mi", "む": "mu", "め": "me", "も": "mo",
+                // や行
+                "や": "ya", "ゆ": "yu", "よ": "yo",
+                // ら行
+                "ら": "ra", "り": "ri", "る": "ru", "れ": "re", "ろ": "ro",
+                // わ行
+                "わ": "wa", "を": "wo", "ん": "n"
+            };
+            
+            // 按行分组的50音字母
+            const hiraganaGroups = [
+                ["あ", "い", "う", "え", "お"],              // あ行 - 起始字母
+                ["か", "き", "く", "け", "こ"],              // か行 - 第1级
+                ["さ", "し", "す", "せ", "そ"],              // さ行 - 第2级
+                ["た", "ち", "つ", "て", "と"],              // た行 - 第3级
+                ["な", "に", "ぬ", "ね", "の"],              // な行 - 第4级
+                ["は", "ひ", "ふ", "へ", "ほ"],              // は行 - 第5级
+                ["ま", "み", "む", "め", "も"],              // ま行 - 第6级
+                ["や", "ゆ", "よ"],                          // や行 - 第7级
+                ["ら", "り", "る", "れ", "ろ"],              // ら行 - 第8级
+                ["わ", "を", "ん"],                          // わ行 - 第9级
+                [] // 第10级 - 初始为空，将在达到该级别时填充全部字母
+            ];
+            
+            // 字母統計數據 - 新增
+            const letterStats = {};
+            
+            // 初始化字母統計
+            function initLetterStats(char, level) {
+                if (!letterStats[char]) {
+                    letterStats[char] = {
+                        romaji: fullHiraganaMap[char],
+                        level: level,
+                        appearances: 0,
+                        successes: 0,
+                        failures: 0,
+                        failureRate: 0,
+                        weightAdjustment: 1.0
+                    };
+                }
+            }
+            
+            // 當前游戏中的字母映射
+            let hiraganaMap = {};
+            // 初始只使用あ行
+            hiraganaGroups[0].forEach((char, index) => {
+                hiraganaMap[char] = fullHiraganaMap[char];
+                initLetterStats(char, 0); // 初始化字母統計
+            });
+            
+            // 存储每个级别的字符
+            let levelCharacters = [];
+            levelCharacters.push(hiraganaGroups[0]); // 添加第0级(あ行)字符
+            
+            let letters = [];
+            let health = 100;
+            let score = 0;
+            let currentLevel = 0;
+            let maxLevel = 0;  // 记录玩家达到的最高等级
+            let gameInterval, moveInterval;
+            let isGameOver = false;
+            let lastRomajiDisplayTime = 0;  // 最後一次顯示羅馬字的時間
+            let romajiDisplayTimeout = null; // 保存顯示羅馬字的計時器
+            let isPaused = false; // 新增遊戲暫停狀態
+            
+
+            // 第十級特殊機制相關變量
+            let isLevel10 = false; // 是否處於第十級
+            let level10SuccessReducer = 0.85; // 每次成功消除後該字母出現機率的減少系數
+            let level10MinWeight = 0.1; // 字母權重的最小值
+            let level10FailureMultiplier = 1.25; // 新增：每次失敗消除後該字母出現機率的增加系數
+            let level10MaxWeight = 5.0; // 新增：字母權重的最大值
+            
+            // 基本設定
+            const LEVEL_START_SCORE = 200;  // 第一级开始的分数
+            const SCORE_PER_LEVEL = 100;     // 每50分提升一级
+            const BASE_SPAWN_INTERVAL = 1500; // 基本產生間隔 (毫秒)
+            const BASE_MOVE_INTERVAL = 700;  // 基本移動間隔 (毫秒)
+            const BASE_MOVE_STEP = 2.5;       // 基本移動步長
+            const HEALTH_GAIN = 5;            // 正確消除一個字母獲得的血量
+            const BOTTOM_THRESHOLD = 95;      // 視為觸底的百分比閾值
+            const ROMAJI_DISPLAY_DURATION = 1500; // 羅馬字顯示持續時間（毫秒）
+            const FAILURE_WEIGHT_MULTIPLIER = 2.0; // 失敗字母的權重倍數
+            const MIN_APPEARANCES_FOR_ADJUSTMENT = 3; // 最小出現次數，用於計算調整權重
+            
+            const gameArea = document.getElementById("gameArea");
+            const inputField = document.getElementById("inputField");
+            const inputDisplay = document.getElementById("inputDisplay");
+            const statusDisplay = document.getElementById("statusDisplay");
+            const gameOverScreen = document.getElementById("gameOverScreen");
+            const levelUpNotice = document.getElementById("levelUpNotice");
+            const finalScore = document.getElementById("finalScore");
+            const finalLevel = document.getElementById("finalLevel");
+            const romajiDisplay = document.getElementById("romajiDisplay");
+            const statsButton = document.getElementById("statsButton");
+            const statsPanel = document.getElementById("statsPanel");
+            const closeStatsButton = document.getElementById("closeStatsButton");
+            const statsTableBody = document.getElementById("statsTableBody");
+
+            // 顯示統計面板
+            statsButton.addEventListener("click", () => {
+                // 暫停遊戲
+                isPaused = true;
+                updateStatsPanel();
+                statsPanel.style.display = "block";
+            });
+            
+            // 關閉統計面板
+            closeStatsButton.addEventListener("click", () => {
+                statsPanel.style.display = "none";
+                // 恢復遊戲
+                isPaused = false;
+                // 重新聚焦輸入框
+                inputField.focus();
+            });
+            
+            // 更新統計面板
+            function updateStatsPanel() {
+                // 清空表格
+                statsTableBody.innerHTML = "";
+                
+                // 按等級和字母排序
+                const sortedChars = Object.keys(letterStats).sort((a, b) => {
+                    if (letterStats[a].level !== letterStats[b].level) {
+                        return letterStats[a].level - letterStats[b].level;
+                    }
+                    return a.localeCompare(b);
+                });
+                
+                // 填充表格
+                sortedChars.forEach(char => {
+                    const stats = letterStats[char];
+                    const row = document.createElement("tr");
+                    
+                    // 計算失敗率
+                    const failureRate = stats.appearances > 0 ? 
+                        (stats.failures / stats.appearances * 100).toFixed(1) + "%" : 
+                        "0.0%";
+                    
+                    row.innerHTML = `
+                        <td>${char}</td>
+                        <td>${stats.romaji}</td>
+                        <td>${stats.level}</td>
+                        <td>${stats.appearances}</td>
+                        <td>${stats.successes}</td>
+                        <td>${stats.failures}</td>
+                        <td>${failureRate}</td>
+                        <td>${stats.weightAdjustment.toFixed(2)}x</td>
+                    `;
+                    statsTableBody.appendChild(row);
+                });
+            }
+            
+           // 第十級：調整失敗消除的字母權重
+           function adjustLevel10FailureWeight(char) {
+               if (isLevel10 && letterStats[char]) {
+                   // 每次失敗消除，增加該字母的權重
+                   letterStats[char].weightAdjustment *= level10FailureMultiplier;
+        
+                   // 確保權重不超過最大值
+                   if (letterStats[char].weightAdjustment > level10MaxWeight) {
+                       letterStats[char].weightAdjustment = level10MaxWeight;
+                   }
+               }
+            }
+
+
+
+            // 更新狀態顯示
+            function updateStatus() {
+                // 簡化顯示，移除機率信息以避免畫面過於複雜
+                let statusText = `血量: ${health} / ${Math.max(100, health)} | 分數: ${score} | 等級: ${currentLevel} | 字母數: ${Object.keys(hiraganaMap).length} | 速度: ${getSpeedMultiplier().toFixed(2)}x`;
+                
+                // 如果是第十級，顯示第十級特殊模式標記
+                if (isLevel10) {
+                    statusText += " | 第十級特殊模式：成功消除降低機率，失敗消除增加機率";
+                }
+                
+                statusDisplay.innerHTML = statusText;
+            }
+            
+            function getSpeedMultiplier() {
+                return health <= 100 ? 1 : (1 + (health - 100) / 2000);
+            }
+            
+            // 計算同一級別中字母的總權重
+            function getLevelTotalWeight(level) {
+                let totalWeight = 0;
+                const chars = levelCharacters[level];
+                
+                for (let char of chars) {
+                    // 如果該字母有統計數據，使用其調整後的權重
+                    if (letterStats[char]) {
+                        totalWeight += letterStats[char].weightAdjustment;
+                    } else {
+                        totalWeight += 1.0; // 默認權重
+                    }
+                }
+                
+                return totalWeight;
+            }
+            
+            // 計算權重總和 (基礎權重 + 級別字母內部權重調整)
+            function getWeightSum(level) {
+                let sum = 0;
+                
+                // 第0級
+                sum += getLevelTotalWeight(0);
+                
+                // 第1至當前級別
+                for (let i = 1; i <= level; i++) {
+                    sum += getLevelTotalWeight(i) * Math.pow(2, i - 1);
+                }
+                
+                return sum;
+            }
+            
+            // 從指定級別中根據權重選擇一個字母
+            function getRandomCharFromLevel(level) {
+                const chars = levelCharacters[level];
+                const levelWeight = getLevelTotalWeight(level);
+                let randomValue = Math.random() * levelWeight;
+                let accumulatedWeight = 0;
+                
+                for (let char of chars) {
+                    const charWeight = letterStats[char] ? letterStats[char].weightAdjustment : 1.0;
+                    accumulatedWeight += charWeight;
+                    
+                    if (randomValue < accumulatedWeight) {
+                        return char;
+                    }
+                }
+                
+                // 防止浮點數誤差，返回最後一個字母
+                return chars[chars.length - 1];
+            }
+            
+            // 根據當前等級選擇一個隨機字母
+            function getRandomCharacter() {
+                // 特殊處理第十級
+                if (isLevel10) {
+                    return getRandomCharFromLevel(10);
+                } else if (currentLevel === 0) {
+                    // 第0級只有あ行，但考慮權重
+                    return getRandomCharFromLevel(0);
+                } else {
+                    // 先選擇級別，再在級別內選擇字母
+                    const weightSum = getWeightSum(currentLevel);
+                    let random = Math.random() * weightSum;
+                    let accumulatedWeight = 0;
+                    
+                    // 先檢查第0級
+                    accumulatedWeight += getLevelTotalWeight(0);
+                    if (random < accumulatedWeight) {
+                        return getRandomCharFromLevel(0);
+                    }
+                    
+                    // 檢查第1級到當前級別
+                    for (let i = 1; i <= currentLevel; i++) {
+                        accumulatedWeight += getLevelTotalWeight(i) * Math.pow(2, i - 1);
+                        if (random < accumulatedWeight) {
+                            return getRandomCharFromLevel(i);
+                        }
+                    }
+                    
+                    // 防止浮點數誤差，返回最後一個級別的隨機字母
+                    return getRandomCharFromLevel(currentLevel);
+                }
+            }
+            
+            // 在螢幕中央顯示羅馬字
+            function showRomajiInCenter(romaji, hiragana) {
+                // 清除之前的定時器
+                if (romajiDisplayTimeout) {
+                    clearTimeout(romajiDisplayTimeout);
+                }
+                
+                // 更新當前時間
+                lastRomajiDisplayTime = Date.now();
+                
+                // 顯示羅馬字和平假名
+                romajiDisplay.textContent = `${hiragana} = ${romaji}`;
+                romajiDisplay.style.display = "block";
+                
+                // 設定定時器，隱藏羅馬字
+                romajiDisplayTimeout = setTimeout(() => {
+                    romajiDisplay.style.display = "none";
+                }, ROMAJI_DISPLAY_DURATION);
+            }
+            
+            // 根据分数计算等级
+            function calculateLevel(health) {
+                if (health < LEVEL_START_SCORE) return 0;
+                return Math.min(
+                    Math.floor((health - LEVEL_START_SCORE) / SCORE_PER_LEVEL) + 1, 
+                    hiraganaGroups.length - 1
+                );
+            }
+            
+            // 初始化第十級
+            function initLevel10() {
+                // 先將isLevel10設為true
+                isLevel10 = true;
+                
+                // 將所有50音字母添加到第十級
+                hiraganaGroups[10] = Object.keys(fullHiraganaMap);
+                
+                // 重置所有字母的權重為1.0（初始情況下概率相同）
+                hiraganaGroups[10].forEach(char => {
+                    if (letterStats[char]) {
+                        letterStats[char].weightAdjustment = 1.0;
+                    } else {
+                        // 如果是新字母，初始化其統計數據
+                        initLetterStats(char, 10);
+                    }
+                });
+                
+                // 添加第十級字符到當前映射和級別字符數組
+                levelCharacters[10] = hiraganaGroups[10];
+            }
+            
+            // 检查并应用等级变化
+            function checkLevelChange() {
+                const newLevel = calculateLevel(health);
+                
+                // 如果等级提高了
+                if (newLevel > currentLevel) {
+                    // 更新当前等级
+                    currentLevel = newLevel;
+                    
+                    // 更新最高等级记录
+                    if (currentLevel > maxLevel) {
+                        maxLevel = currentLevel;
+                        
+                        // 特殊處理第十級
+                        if (currentLevel === 10) {
+                            initLevel10();
+                            
+                            // 显示等级提升通知
+                            levelUpNotice.textContent = `達到第十級！特殊模式：成功消除字母後會降低其出現機率，失敗消除則增加機率`;
+                            levelUpNotice.style.display = "block";
+                        }
+                        // 添加这个等级对应的新字母组（第1-9級）
+                        else if (currentLevel > 0 && currentLevel < hiraganaGroups.length - 1) {
+                            // 添加新级别的字符到映射
+                            hiraganaGroups[currentLevel].forEach(char => {
+                                hiraganaMap[char] = fullHiraganaMap[char];
+                                // 初始化新字母的統計數據
+                                initLetterStats(char, currentLevel);
+                            });
+                            
+                            // 存储这个级别的字符
+                            levelCharacters.push(hiraganaGroups[currentLevel]);
+                            
+                            // 显示等级提升通知
+                            levelUpNotice.textContent = `等級提升! ${currentLevel} 級 - 新增 ${hiraganaGroups[currentLevel].join(', ')}`;
+                            levelUpNotice.style.display = "block";
+                        }
+                        
+                        // 2秒后隐藏通知
+                        setTimeout(() => {
+                            levelUpNotice.style.display = "none";
+                        }, 2000);
+                    }
+                }
+                
+                // 注意：根据需求，不会降级，所以不处理分数下降的情况
+            }
+            
+            // 更新字母的失敗率和權重調整
+            function updateLetterFailureRates() {
+                // 如果是第十级，不使用失败率来调整权重
+                if (isLevel10) {
+                    return;
+                }
+                
+                for (let char in letterStats) {
+                    const stats = letterStats[char];
+                    
+                    // 只有當字母出現次數達到最小閾值時才調整
+                    if (stats.appearances >= MIN_APPEARANCES_FOR_ADJUSTMENT) {
+                        stats.failureRate = stats.failures / stats.appearances;
+                        
+                        // 根據失敗率調整權重
+                        // 使用非線性的調整方式，失敗率越高權重增加越多
+                        stats.weightAdjustment = 1.0 + (stats.failureRate * FAILURE_WEIGHT_MULTIPLIER);
+                    }
+                }
+            }
+            
+            // 第十級：調整成功消除的字母權重
+            function adjustLevel10Weight(char) {
+                if (isLevel10 && letterStats[char]) {
+                    // 每次成功消除，降低該字母的權重
+                    letterStats[char].weightAdjustment *= level10SuccessReducer;
+                    
+                    // 確保權重不低於最小值
+                    if (letterStats[char].weightAdjustment < level10MinWeight) {
+                        letterStats[char].weightAdjustment = level10MinWeight;
+                    }
+                }
+            }
+            
+            function spawnLetter() {
+                // 遊戲暫停或結束時不再產生新字母
+                if (isGameOver || isPaused) {
+                    return;
+                }
+                
+                // 使用基於權重的隨機字母選擇
+                const char = getRandomCharacter();
+                const letterElem = document.createElement("div");
+                letterElem.textContent = char;
+                letterElem.className = "letter";
+                letterElem.style.top = "0px";
+                letterElem.style.left = `${Math.random() * 80 + 10}%`;
+                
+                gameArea.appendChild(letterElem);
+                
+                // 更新字母出現次數
+                if (letterStats[char]) {
+                    letterStats[char].appearances++;
+                }
+                
+                letters.push({ 
+                    element: letterElem, 
+                    char, 
+                    y: 0, 
+                    romajiShown: false // 記錄是否已顯示拼音
+                });
+                
+                // 調整產生速度
+                clearInterval(gameInterval);
+                const speedMultiplier = getSpeedMultiplier();
+                const newInterval = Math.max(200, Math.floor(BASE_SPAWN_INTERVAL / speedMultiplier));
+                gameInterval = setInterval(spawnLetter, newInterval);
+            }
+            
+            function moveLetters() {
+                // 遊戲暫停或結束時不再移動字母
+                if (isGameOver || isPaused) {
+                    return;
+                }
+                
+                const speedMultiplier = getSpeedMultiplier();
+                const moveStep = BASE_MOVE_STEP * speedMultiplier;
+                
+                for (let i = letters.length - 1; i >= 0; i--) {
+                    const letter = letters[i];
+                    letter.y += moveStep;
+                    letter.element.style.top = `${letter.y}%`;
+                    
+                    // 當字母接近底部時，在螢幕中間顯示拼音
+                    if (letter.y >= BOTTOM_THRESHOLD && !letter.romajiShown) {
+                        const romaji = hiraganaMap[letter.char];
+                        showRomajiInCenter(romaji, letter.char);
+                        letter.romajiShown = true;
+                    }
+                    
+                    if (letter.y >= 100) {
+                        // 字母掉落到底部，記錄失敗
+                        if (letterStats[letter.char]) {
+                            letterStats[letter.char].failures++;
+                            
+                            // 第十級：調整失敗字母的權重
+                            if (isLevel10) {
+                                adjustLevel10FailureWeight(letter.char);
+                            } else {
+                                // 非第十級：更新所有字母的失敗率和權重調整
+                                updateLetterFailureRates();
+                            }
+                        }
+                        
+                        health -= 20;
+                        letter.element.remove();
+                        letters.splice(i, 1);
+                    }
+                }
+                
+                if (health <= 0) {
+                    gameOver();
+                    return; // 遊戲結束後立即返回，不再設置新的計時器
+                }
+                
+                // 調整移動速度
+                clearInterval(moveInterval);
+                const newInterval = Math.max(200, Math.floor(BASE_MOVE_INTERVAL / speedMultiplier));
+                moveInterval = setInterval(moveLetters, newInterval);
+                
+                updateStatus();
+            }
+            
+            function gameOver() {
+                isGameOver = true;
+                clearInterval(gameInterval);
+                clearInterval(moveInterval);
+                finalScore.textContent = score;
+                finalLevel.textContent = maxLevel;
+                gameOverScreen.style.display = "block";
+                inputField.disabled = true;
+                updateStatus();
+            }
+            
+            window.restartGame = function() {
+                // Clear the existing intervals
+                clearInterval(gameInterval);
+                clearInterval(moveInterval);
+                
+                // 清除羅馬字顯示的計時器
+                if (romajiDisplayTimeout) {
+                    clearTimeout(romajiDisplayTimeout);
+                    romajiDisplay.style.display = "none";
+                }
+
+                // Reset game state
+                isGameOver = false;
+                isPaused = false;
+                health = 100;
+                score = 0;
+                currentLevel = 0;
+                maxLevel = 0;
+                isLevel10 = false; // 重置第十級標誌
+                
+                // 重置字母表和級別字符數組
+                hiraganaMap = {};
+                levelCharacters = [];
+                
+                // 重置字母統計
+                for (let char in letterStats) {
+                    letterStats[char] = {
+                        romaji: letterStats[char].romaji,
+                        level: letterStats[char].level,
+                        appearances: 0,
+                        successes: 0,
+                        failures: 0,
+                        failureRate: 0,
+                        weightAdjustment: 1.0
+                    };
+                }
+                
+                // 只保留第一组（あ行）
+                hiraganaGroups[0].forEach(char => {
+                    hiraganaMap[char] = fullHiraganaMap[char];
+                    // 確保第一組字母的統計數據已初始化
+                    initLetterStats(char, 0);
+                });
+                
+                // 初始化級別字符數組
+                levelCharacters.push(hiraganaGroups[0]);
+
+                // Remove all letters from the game area
+                letters.forEach(letter => letter.element.remove());
+                letters = [];
+
+                // Hide the game over screen and enable input
+                gameOverScreen.style.display = "none";
+                inputField.disabled = false;
+
+                // Reset the input field
+                inputField.value = "";
+                inputDisplay.textContent = "";
+
+                // Start the game again
+                startGame();
+            }
+            
+            inputField.addEventListener("input", () => {
+                inputDisplay.textContent = inputField.value;
+            });
+            
+            // Listen for keydown events (for spacebar to clear letter)
+            inputField.addEventListener("keydown", (e) => {
+                if (e.key === " " && inputField.value.trim() !== "") {
+                    e.preventDefault(); // 防止空白鍵的預設行為
+
+                    const currentInput = inputField.value.trim();
+                    let matchFound = false;
+                    
+                    // 找出所有匹配的字母
+                    let matchingLetters = [];
+                    for (let i = 0; i < letters.length; i++) {
+                        if (hiraganaMap[letters[i].char] === currentInput) {
+                            matchingLetters.push({index: i, y: letters[i].y});
+                        }
+                    }
+                    
+
+                    // 如果有匹配的字母，找出最靠近底部的一個
+                    if (matchingLetters.length > 0) {
+                        // 按照 y 值（垂直位置）降序排序，y 值最大的在最前面
+                        matchingLetters.sort((a, b) => b.y - a.y);
+                        
+                        // 消除最靠近底部的字母
+                        const indexToRemove = matchingLetters[0].index;
+                        const removedChar = letters[indexToRemove].char;
+                        
+                        // 更新字母成功次數
+                        if (letterStats[removedChar]) {
+                            letterStats[removedChar].successes++;
+                            // 更新所有字母的失敗率和權重調整
+                            updateLetterFailureRates();
+                
+                            // 只有當字母的等級大於或等於 (當前等級-1) 時才增加血量
+                            // 這樣第三級時，第一級的不增加，但第二級的還是會增加
+                            if (letterStats[removedChar].level >= currentLevel - 1) {
+                                health += HEALTH_GAIN;
+                            }
+                        }
+                        
+                        score += 10;
+                        
+                        letters[indexToRemove].element.remove();
+                        letters.splice(indexToRemove, 1);
+                        matchFound = true;
+                        
+                        // 检查分数是否达到新等级
+                        checkLevelChange();
+                    }
+                    
+                    // 無論是否匹配，都重置輸入框
+                    inputField.value = "";
+                    inputDisplay.textContent = "";
+                    updateStatus();
+                }
+            });
+
+            // 將輸入框聚焦，確保遊戲開始就能輸入
+            inputField.focus();
+            
+            // 保持輸入框聚焦，除非在查看統計面板
+            document.addEventListener("click", (e) => {
+                // 如果點擊的不是統計面板或其子元素，且遊戲沒有暫停，則聚焦輸入框
+                if (!statsPanel.contains(e.target) && !isPaused) {
+                    inputField.focus();
+                }
+            });
+
+            function startGame() {
+                updateStatus();
+                gameInterval = setInterval(spawnLetter, BASE_SPAWN_INTERVAL);
+                moveInterval = setInterval(moveLetters, BASE_MOVE_INTERVAL);
+                inputField.focus(); // 確保遊戲開始時輸入框獲得焦點
+            }
+            
+            startGame(); // Start the game when the page loads
+        });
+    </script>
+</body>
+</html>
